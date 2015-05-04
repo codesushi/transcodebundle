@@ -1,0 +1,5 @@
+services:
+  coshi.amazon_transcoder.transcoder:
+      class: Coshi\Bundle\TranscodeBundle\Transcoder\Transcoder
+      arguments:
+          - @service_container

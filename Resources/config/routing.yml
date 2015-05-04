@@ -1,0 +1,4 @@
+coshi_transcode_sns:
+    path: /media/sns
+    defaults:
+        _controller: CoshiTranscodeBundle:Notify:notify
