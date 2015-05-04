@@ -1,22 +1,19 @@
 CodeShushi's TranscodeBundle
 =============
 
-TranscodeBundle - for symfony 2.1
+TranscodeBundle - for symfony 2.6
 
 TranscodeBundle is designed to work with [Amazon Elastic Transcoder](https://aws.amazon.com/elastictranscoder/?nc1=f_ls)
 > Amazon Elastic Transcoder is media transcoding in the cloud. It is designed to be a highly scalable, easy to use and a cost effective way for developers and businesses to convert (or “transcode”) media files from their source format into versions that will playback on devices like smartphones, tablets and PCs.
 
 Install
 ============
-Add to your composer.json :
-```json
-"repositories": [
-    {
-        "type": "vcs",
-        "url": "https://github.com/codesushi/transcodebundle
-    }
-]
+Add TranscodeBundle by running the command
+```shell
+$ php composer.phar require codesushi/transcodebundle
 ```
+Composer will install the bundle to your project's vendor/codesushi directory.
+
 Configure
 ============
 Add to your config.yml :
