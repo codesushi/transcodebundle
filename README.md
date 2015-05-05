@@ -13,6 +13,7 @@ Add TranscodeBundle by running the command
 $ php composer.phar require codesushi/transcodebundle
 ```
 Composer will install the bundle to your project's vendor/codesushi directory.
+You also need to install [aws-sdk](http://aws.amazon.com/sdk-for-php/).
 
 Configure
 ============

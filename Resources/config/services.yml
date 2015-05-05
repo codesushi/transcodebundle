@@ -3,3 +3,15 @@ services:
       class: Coshi\Bundle\TranscodeBundle\Transcoder\Transcoder
       arguments:
           - @service_container
+          - @coshi.amazon_transcoder.s3client
+          - @coshi.amazon_transcoder.elastict_transcoder_client
+  coshi.amazon_transcoder.s3client:
+          class:   Aws\S3\S3Client
+          factory: [Aws\S3\S3Client, factory]
+          arguments:
+              - { key: "%aws_access_key_id%", secret: "%aws_secret_key%" }
+  coshi.amazon_transcoder.elastict_transcoder_client:
+          class: Aws\ElasticTranscoder\ElasticTranscoderClient
+          factory: [Aws\ElasticTranscoder\ElasticTranscoderClient, factory]
+          arguments:
+              -  { key: "%aws_access_key_id%", secret: "%aws_secret_key%", region: "%aws_transcoder_region%" }

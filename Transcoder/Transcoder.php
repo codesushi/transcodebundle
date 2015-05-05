@@ -1,6 +1,7 @@
 <?php
 namespace Coshi\Bundle\TranscodeBundle\Transcoder;
 
+use Aws\Common\Client\AwsClientInterface;
 use Symfony\Component\DependencyInjection\Container;
 
 use Aws\ElasticTranscoder\ElasticTranscoderClient;
@@ -21,10 +22,11 @@ class Transcoder
     private $transcoder;
     private $s3Object;
 
-    public function __construct(Container $container)
+    public function __construct(Container $container, AwsClientInterface $s3, ElasticTranscoderClient $transcoder)
     {
         $this->container = $container;
-        $this->createAWSclients();
+        $this->s3 = $s3;
+        $this->transcoder = $transcoder;
     }
 
     public function setVideo($video)
@@ -46,7 +48,7 @@ class Transcoder
         $this->updateVideoStatus('uploading');
 
         $this->s3Object = $this->s3->putObject(array(
-            'Bucket'     => $this->bucket,
+            'Bucket'     => $this->getConfig('aws_s3_videos_bucket'),
             'Key'        => $this->getKey(),
             'SourceFile' => $this->video->getFilePath(),
             'ACL'        => 'public-read',
@@ -82,7 +84,7 @@ class Transcoder
             $key = $this->getKey($presetName);
         }
 
-        $url = $this->s3->getObjectUrl($this->bucket, $key);
+        $url = $this->s3->getObjectUrl($this->getConfig('aws_s3_videos_bucket'), $key);
 
         return $url;
     }
@@ -95,34 +97,6 @@ class Transcoder
         return $this->video;
     }
 
-    private function createAWSclients()
-    {
-        $key = $this->getConfig('aws_access_key_id');
-        $secret = $this->getConfig('aws_secret_key');
-
-        $this->bucket = $this->getConfig('aws_s3_videos_bucket');
-        $this->pipeline = $this->getConfig('aws_transcoder_videos_pipeline_id');
-        $this->presets = $this->getConfig('aws_transcoder_videos_presets');
-
-        $this->s3 = S3Client::factory(array(
-            'key'    => $key,
-            'secret' => $secret,
-        ));
-
-        $this->transcoder = ElasticTranscoderClient::factory(array(
-            'key'    => $key,
-            'secret' => $secret,
-            'region' => $this->getConfig('aws_transcoder_region'),
-        ));
-    }
-
-    private function getKey($preset = null)
-    {
-        $preset = $preset ? $preset : 'upload';
-
-        return $preset . '/' . $this->video->getVideoFilename($preset);
-    }
-
     public static function getKeyForVideo(TranscodeableInterface $video)
     {
         return 'upload/' . $video->getFilename();
@@ -133,6 +107,13 @@ class Transcoder
         $filename = str_replace('upload/', '', $key);
 
         return $this->getVideoProvider()->findOneByFileName($filename);
+    }
+
+    private function getKey($preset = null)
+    {
+        $preset = $preset ? $preset : 'upload';
+
+        return $preset . '/' . $this->video->getVideoFilename($preset);
     }
 
     private function updateVideoStatus($status)
@@ -151,7 +132,7 @@ class Transcoder
     {
         $output = pathinfo($this->video->getFilename(), PATHINFO_FILENAME);
         $outputs = array();
-        foreach ($this->presets as $type => $preset) {
+        foreach ($this->getConfig('aws_transcoder_videos_presets') as $type => $preset) {
             $outputs[] = array(
                 'Key' => $type . '/' . $this->video->getVideoFilename($type),
                 'PresetId' => $preset,
@@ -164,7 +145,7 @@ class Transcoder
         );
 
         return $this->transcoder->createJob(array(
-            'PipelineId' => $this->pipeline,
+            'PipelineId' => $this->getConfig('aws_transcoder_videos_pipeline_id'),
             'Input' => $input,
             'Outputs' => $outputs,
         ))->toArray();
@@ -194,7 +175,7 @@ class Transcoder
 
     private function getManager()
     {
-        return $this->container->get('doctrine')->getManager();
+        return $this->container->get('doctrine.orm.entity_manager');
     }
 
     /**
