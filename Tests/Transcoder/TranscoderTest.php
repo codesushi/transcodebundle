@@ -8,6 +8,8 @@ class TranscoderTest extends \PHPUnit_Framework_TestCase
 {
     protected $s3;
     protected $transcoder;
+    protected $container;
+    protected $video;
 
     protected function setUp()
     {
@@ -16,6 +18,11 @@ class TranscoderTest extends \PHPUnit_Framework_TestCase
             ->getMock();
         $this->transcoder = $this->getMockBuilder('Aws\ElasticTranscoder\ElasticTranscoderClient')
             ->disableOriginalConstructor()
+            ->getMock();
+        $this->container = $this->getMockBuilder('Symfony\Component\DependencyInjection\Container')
+            ->disableOriginalConstructor()
+            ->getMock();
+        $this->video = $this->getMockBuilder('Coshi\Bundle\TranscodeBundle\Transcoder\TranscodeableInterface')
             ->getMock();
     }
 
@@ -35,14 +42,81 @@ class TranscoderTest extends \PHPUnit_Framework_TestCase
         ));
     }
 
+    public function testConvertVideo()
+    {
+        $filename = 'filename';
+        $videoFilename = 'VideoFilename';
+        $genericPreset = array('name' => 'generic', 'value' => '1351620000001-000010');
+        $iphonePreset = array('name' => 'iphone', 'value' => '1351620000001-100010');
+        $pipelineId = '1231212';
+        $this->video->method('getAmazonTranscodeStatus')
+            ->willReturn('uploaded');
+        $this->video->method('getFilename')
+            ->willReturn($filename);
+        $this->video->method('getVideoFilename')
+            ->willReturn($videoFilename);
+
+        $collection = $this->getMockBuilder('Guzzle\Common\Collection')
+            ->disableOriginalConstructor()
+            ->getMock();
+
+        $this->container->method('getParameter')
+            ->with('coshi_transcode')
+            ->willReturn(array(
+                    'aws_transcoder_videos_presets' => array(
+                        $genericPreset['name'] => $genericPreset['value'],
+                        $iphonePreset['name'] => $iphonePreset['value']
+                    ),
+                    'aws_transcoder_videos_pipeline_id' => $pipelineId
+                )
+            );
+        $this->transcoder->method('__call')
+            ->with(
+                'createJob',
+                array(
+                    array(
+                        'PipelineId' => $pipelineId,
+                        'Input' => array(
+                            'Key' => 'upload/' . $filename
+                        ),
+                        'Outputs' => array(
+                            array(
+                                'Key' => $genericPreset['name'] . '/' . $videoFilename,
+                                'PresetId' => $genericPreset['value'],
+                                'ThumbnailPattern' => 'thumbnail/' . $filename . '/{count}'
+                            ),
+                            array(
+                                'Key' => $iphonePreset['name'] . '/' . $videoFilename,
+                                'PresetId' => $iphonePreset['value'],
+                                'ThumbnailPattern' => 'thumbnail/' . $filename . '/{count}'
+                            )
+                        )
+                    )
+                ))
+            ->willReturn($collection);
+        $transcoder = new Transcoder($this->container, $this->s3, $this->transcoder);
+        $transcoder->setVideo($this->video);
+        $transcoder->convert();
+    }
+
+    public function testNotUploadedVideoConvert()
+    {
+        $container = $this->getMockBuilder('Symfony\Component\DependencyInjection\Container')
+            ->disableOriginalConstructor()
+            ->getMock();
+
+        $transcoder = new Transcoder($container, $this->s3, $this->transcoder);
+        $transcoder->setVideo($this->video);
+        $this->assertNull($transcoder->convert());
+    }
+
     public function testGetKeyForVideo()
     {
-        $video = $this->getMockBuilder('Coshi\Bundle\TranscodeBundle\Transcoder\TranscodeableInterface')
-            ->getMock();
-        $video->method('getFilename')
+        $this->video->method('getFilename')
             ->willReturn('filename');
 
-        $this->assertEquals('upload/filename', Transcoder::getKeyForVideo($video));
+
+        $this->assertEquals('upload/filename', Transcoder::getKeyForVideo($this->video));
     }
 
     public function testUpload()
@@ -52,73 +126,62 @@ class TranscoderTest extends \PHPUnit_Framework_TestCase
         $sourceFile = 'home/server/images/filename.png';
         $objectUrl = 'http://object.url';
 
-        $video = $this->getMockBuilder('Coshi\Bundle\TranscodeBundle\Transcoder\TranscodeableInterface')
-            ->getMock();
-        $video->method('getVideoFilename')
+        $this->video->method('getVideoFilename')
             ->willReturn($filename);
-        $video->method('getFilePath')
+        $this->video->method('getFilePath')
             ->willReturn($sourceFile);
 
         $manager = $this->getMockBuilder('Doctrine\Common\Persistence\ObjectManager')
             ->disableOriginalConstructor()
             ->getMock();
 
-        $container = $this->getMockBuilder('Symfony\Component\DependencyInjection\Container')
-            ->disableOriginalConstructor()
-            ->getMock();
-        $container->method('get')
+        $this->container->method('get')
             ->with('doctrine.orm.entity_manager')
             ->willReturn($manager);
-        $container->method('getParameter')
+        $this->container->method('getParameter')
             ->with('coshi_transcode')
             ->willReturn(array('aws_s3_videos_bucket' => $bucketId));
 
-        $this->s3->method('putObject')
-            ->with(array(
-                'Bucket' => $bucketId,
-                'Key' => 'upload/' . $filename,
-                'SourceFile' => $sourceFile,
-                'ACL' => 'public-read'
-            ))
+        $this->s3->method('__call')
+            ->with(
+                'putObject',
+                array(
+                    array(
+                        'Bucket' => $bucketId,
+                        'Key' => 'upload/' . $filename,
+                        'SourceFile' => $sourceFile,
+                        'ACL' => 'public-read'
+                    )
+                ))
             ->willReturn(array(
                 'ObjectURL' => $objectUrl
             ));
 
-        $video->expects($this->exactly(2))
+        $this->video->expects($this->exactly(2))
             ->method('setAmazonTranscodeStatus');
-        $video->expects($this->once())
+        $this->video->expects($this->once())
             ->method('setMediaUrl')
             ->with($objectUrl);
 
-        $transcoder = new Transcoder($container, $this->s3, $this->transcoder);
-        $transcoder->setVideo($video);
+        $transcoder = new Transcoder($this->container, $this->s3, $this->transcoder);
+        $transcoder->setVideo($this->video);
         $transcoder->upload();
     }
 
     public function testUploadForUploadedVideo()
     {
-        $video = $this->getMockBuilder('Coshi\Bundle\TranscodeBundle\Transcoder\TranscodeableInterface')
-            ->getMock();
-        $video->method('getAmazonTranscodeStatus')
+        $this->video->method('getAmazonTranscodeStatus')
             ->willReturn('processing');
-        $container = $this->getMockBuilder('Symfony\Component\DependencyInjection\Container')
-            ->disableOriginalConstructor()
-            ->getMock();
-        $transcoder = new Transcoder($container, $this->s3, $this->transcoder);
-        $transcoder->setVideo($video);
+        $transcoder = new Transcoder($this->container, $this->s3, $this->transcoder);
+        $transcoder->setVideo($this->video);
         $this->assertNull($transcoder->upload());
     }
 
     public function testGetUrl()
     {
-        $video = $this->getMockBuilder('Coshi\Bundle\TranscodeBundle\Transcoder\TranscodeableInterface')
-            ->getMock();
-        $video->method('getVideoFilename')
+        $this->video->method('getVideoFilename')
             ->willReturn('filename');
-        $container = $this->getMockBuilder('Symfony\Component\DependencyInjection\Container')
-            ->disableOriginalConstructor()
-            ->getMock();
-        $container->method('getParameter')
+        $this->container->method('getParameter')
             ->with('coshi_transcode')
             ->willReturn(array('aws_s3_videos_bucket' => 'bucketID'));
         $this->s3->method('getObjectUrl')
@@ -126,8 +189,8 @@ class TranscoderTest extends \PHPUnit_Framework_TestCase
                 return $bucket . '/' . $key;
             }));
 
-        $transcoder = new Transcoder($container, $this->s3, $this->transcoder);
-        $transcoder->setVideo($video);
+        $transcoder = new Transcoder($this->container, $this->s3, $this->transcoder);
+        $transcoder->setVideo($this->video);
         $this->assertEquals('bucketID/upload/filename', $transcoder->getUrl());
         $this->assertEquals('bucketID/iphonePreset/filename', $transcoder->getUrl('iphonePreset'));
     }
